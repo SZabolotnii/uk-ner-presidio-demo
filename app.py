@@ -54,10 +54,10 @@ def analyze_and_anonymize(text):
 
 demo = gr.Interface(
     fn=analyze_and_anonymize,
-    inputs=gr.Textbox(label="Український текст", lines=5, placeholder="Введіть текст"),
+    inputs=gr.Textbox(label="Український текст", lines=20, placeholder="Введіть текст"),
     outputs=[
-        gr.Textbox(label="Знайдені сутності"),
-        gr.Textbox(label="Анонімізований текст")
+        gr.Textbox(label="Знайдені сутності", lines=10),
+        gr.Textbox(label="Анонімізований текст", lines=20)
     ],
     title="Український NER + Presidio анонімізація",
     # description="Модель dchaplinsky/uk_ner_web_trf_13class інтегрована з Presidio Anonymizer."

@@ -40,3 +40,6 @@ dist/
 build/
 *.tar.gz
 *.whl
+
+
+flagged/
