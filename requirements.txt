@@ -1,0 +1,6 @@
+transformers
+torch
+gradio
+presidio-anonymizer
+spacy>=3.7
+spacy-transformers>=1.3

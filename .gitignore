@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtualenv
+.env
+.venv
+venv/
+ENV/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Hugging Face cache (моделі вантажаться автоматично)
+.cache/
+huggingface/
+transformers_cache/
+datasets/
+tokenizers/
+
+# VSCode / PyCharm
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.tar.gz
+*.whl
