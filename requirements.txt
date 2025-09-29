@@ -1,7 +1,9 @@
+# Dependencies currently require Python <3.13 because spaCy's blis wheel is missing for 3.13.
 transformers
 torch
 huggingface-hub
-gradio
+gradio==4.26.0
+MarkupSafe>=2.1.5,<2.2
 presidio-analyzer
 presidio-anonymizer
 spacy==3.7.4

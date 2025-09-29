@@ -2,11 +2,44 @@ import gradio as gr
 import spacy
 from huggingface_hub import snapshot_download
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
-from presidio_analyzer.nlp_engine import NoOpNlpEngine
+from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngine
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
 MODEL_REPO = "dchaplinsky/uk_ner_web_trf_13class"
+
+
+class SimpleNoOpNlpEngine(NlpEngine):
+    """Minimal NLP engine stub so Presidio can run pattern recognizers."""
+
+    def __init__(self, supported_languages=None):
+        self._supported_languages = supported_languages or ["en"]
+        self._loaded = True
+
+    def load(self) -> None:  # noqa: D401 - interface method
+        self._loaded = True
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    def process_text(self, text: str, language: str) -> NlpArtifacts:
+        return NlpArtifacts([], [], [], [], self, language)
+
+    def process_batch(self, texts, language: str, batch_size: int = 1, n_process: int = 1, **kwargs):
+        for text in texts:
+            yield text, self.process_text(text, language)
+
+    def is_stopword(self, word: str, language: str) -> bool:
+        return False
+
+    def is_punct(self, word: str, language: str) -> bool:
+        return False
+
+    def get_supported_entities(self):
+        return []
+
+    def get_supported_languages(self):
+        return list(self._supported_languages)
 
 def _load_spacy_model() -> "spacy.language.Language":
     local_model_dir = snapshot_download(repo_id=MODEL_REPO)
@@ -17,8 +50,8 @@ nlp = _load_spacy_model()
 
 # Presidio Analyzer для pattern-based detection без важкої spaCy-моделі
 presidio_analyzer = AnalyzerEngine(
-    nlp_engine=NoOpNlpEngine(),
-    supported_languages=["en"]
+    nlp_engine=SimpleNoOpNlpEngine(),
+    supported_languages=["en"],
 )
 
 # ============ ВИПРАВЛЕННЯ: Language-Agnostic IBAN Recognizer ============
