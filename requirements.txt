@@ -1,6 +1,7 @@
 transformers
 torch
 gradio
+presidio-analyzer
 presidio-anonymizer
 spacy>=3.7
 spacy-transformers>=1.3
