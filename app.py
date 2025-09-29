@@ -2,6 +2,7 @@ import gradio as gr
 import spacy
 from huggingface_hub import snapshot_download
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
+from presidio_analyzer.nlp_engine import NoOpNlpEngine
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
@@ -14,8 +15,11 @@ def _load_spacy_model() -> "spacy.language.Language":
 # Українська NER модель
 nlp = _load_spacy_model()
 
-# Presidio Analyzer для pattern-based detection
-presidio_analyzer = AnalyzerEngine()
+# Presidio Analyzer для pattern-based detection без важкої spaCy-моделі
+presidio_analyzer = AnalyzerEngine(
+    nlp_engine=NoOpNlpEngine(),
+    supported_languages=["en"]
+)
 
 # ============ ВИПРАВЛЕННЯ: Language-Agnostic IBAN Recognizer ============
 ukrainian_iban_pattern = Pattern(
@@ -28,8 +32,8 @@ ukrainian_iban_recognizer = PatternRecognizer(
     supported_entity="IBAN_CODE",
     patterns=[ukrainian_iban_pattern],
     context=["рахунок", "IBAN", "iban", "рахунку", "оплата", "банк", "account", "payment"],
-    # ✅ КРИТИЧНЕ ВИПРАВЛЕННЯ: None означає "працює для всіх мов"
-    supported_language="en"  # Було: "uk"
+    # Синхронізуємося з Presidio, який тепер працює в англомовному режимі
+    supported_language="en"
 )
 
 presidio_analyzer.registry.add_recognizer(ukrainian_iban_recognizer)

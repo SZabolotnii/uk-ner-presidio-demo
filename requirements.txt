@@ -1,5 +1,6 @@
 transformers
 torch
+huggingface-hub
 gradio
 presidio-analyzer
 presidio-anonymizer
