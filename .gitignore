@@ -20,6 +20,8 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+.zshrc
+.zshrc.save
 
 # Logs
 *.log
