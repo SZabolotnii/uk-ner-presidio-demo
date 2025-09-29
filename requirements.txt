@@ -3,5 +3,5 @@ torch
 gradio
 presidio-analyzer
 presidio-anonymizer
-spacy>=3.7
+spacy==3.7.4
 spacy-transformers>=1.3
