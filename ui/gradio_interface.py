@@ -267,38 +267,37 @@ class GradioInterface:
                     """
                 )
                 
-                with gr.Row():
-                    input_text = gr.Textbox(
-                        label="Вхідний текст",
-                        placeholder=(
-                            "Приклад:\n"
-                            "Іван Петренко працює в ТОВ 'Приватбанк'.\n"
-                            "Email: ivan.petrenko@example.com\n"
-                            "Телефон: +380501234567\n"
-                            "IBAN: UA213223130000026007233566001"
-                        ),
-                        lines=12,
-                        max_lines=20
-                    )
-                
                 analyze_btn = gr.Button(
                     "🚀 Деідентифікувати",
                     variant="primary",
                     size="lg"
                 )
-                
-                with gr.Row():
-                    with gr.Column():
-                        entities_output = gr.Textbox(
-                            label="📋 Знайдені сутності",
+
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=1):
+                        input_text = gr.Textbox(
+                            label="Вхідний текст",
+                            placeholder=(
+                                "Приклад:\n"
+                                "Іван Петренко працює в ТОВ 'Приватбанк'.\n"
+                                "Email: ivan.petrenko@example.com\n"
+                                "Телефон: +380501234567\n"
+                                "IBAN: UA213223130000026007233566001"
+                            ),
+                            lines=12,
+                            max_lines=20
+                        )
+
+                    with gr.Column(scale=1):
+                        anonymized_output = gr.Textbox(
+                            label="🔒 Анонімізований текст",
                             lines=12,
                             show_copy_button=True,
                             interactive=False
                         )
-                    
-                    with gr.Column():
-                        anonymized_output = gr.Textbox(
-                            label="🔒 Анонімізований текст",
+
+                        entities_output = gr.Textbox(
+                            label="📋 Знайдені сутності",
                             lines=12,
                             show_copy_button=True,
                             interactive=False
