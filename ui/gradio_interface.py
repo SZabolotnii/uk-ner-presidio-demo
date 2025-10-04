@@ -1,5 +1,5 @@
 """
-Градio інтерфейс для системи деідентифікації.
+Градо інтерфейс для системи деідентифікації.
 
 Архітектурна стратегія: Відокремлення UI від бізнес-логіки.
 UI шар тільки відповідає за взаємодію з користувачем та
@@ -9,17 +9,25 @@ Design Principles:
 - Мінімальна логіка в UI (тільки форматування та валідація)
 - Чітке розділення відповідальностей
 - User-friendly error handling
+- File I/O isolation (handlers/exporters)
+
+ENHANCED VERSION: Додано підтримку завантаження файлів (TXT/DOCX) 
+та експорту результатів у різних форматах.
 """
 
 import logging
 import os
 import socket
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import gradio as gr
 
 from core.config import config
 from core.analyzer import HybridAnalyzer, AnalysisResult
+
+# NEW: File I/O imports
+from utils.file_handlers import FileHandler, FileReadResult, sanitize_text
+from utils.file_exporters import FileExporter, ExportFormat, generate_filename
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,9 @@ class GradioInterface:
     
     Архітектурний підхід: Stateful UI wrapper над stateless analyzer.
     Зберігає стан вибраних сутностей між викликами.
+    
+    ENHANCED: Додано file upload/export capabilities з повною ізоляцією
+    від core business logic.
     """
     
     def __init__(self):
@@ -41,7 +52,7 @@ class GradioInterface:
         self.enabled_ukrainian = set(self.config.UKRAINIAN_ENTITIES.keys())
         self.enabled_presidio = set(self.config.PRESIDIO_PATTERN_ENTITIES.keys())
         
-        logger.info("GradioInterface initialized")
+        logger.info("GradioInterface initialized with file I/O support")
     
     def _format_error(self, error: Exception) -> Tuple[str, str]:
         """
@@ -67,9 +78,16 @@ class GradioInterface:
         
         return error_message, ""
     
+    # ============================================================
+    # CORE ANALYSIS METHODS (ORIGINAL + ENHANCED)
+    # ============================================================
+    
     def analyze_text(self, text: str) -> Tuple[str, str]:
         """
         Обробляє текст через analyzer та форматує результати.
+        
+        LEGACY METHOD: Збережено для backwards compatibility.
+        Для нових features використовуйте analyze_text_with_export().
         
         Workflow:
         1. Перевірка чи хоч якісь сутності активовані
@@ -96,7 +114,7 @@ class GradioInterface:
                 text=text,
                 ukrainian_entities=list(self.enabled_ukrainian),
                 presidio_entities=list(self.enabled_presidio),
-                conflict_strategy="priority"  # Використовуємо priority-based resolution
+                conflict_strategy="priority"
             )
             
             # Форматуємо результати
@@ -107,6 +125,55 @@ class GradioInterface:
         except Exception as e:
             logger.error(f"Analysis failed: {e}", exc_info=True)
             return self._format_error(e)
+    
+    def analyze_text_with_export(
+        self, 
+        text: str
+    ) -> Tuple[str, str, Optional[AnalysisResult]]:
+        """
+        ENHANCED: Розширена версія analyze_text з state preservation.
+        
+        Ключова відмінність: Повертає AnalysisResult для подальшого експорту.
+        Це дозволяє UI зберігати результат в gr.State без повторного аналізу.
+        
+        Architecture Pattern: Command Query Responsibility Segregation (CQRS)
+        - Query: Форматовані результати для відображення
+        - Command: Raw результат для подальших операцій
+        
+        Args:
+            text: Текст від користувача
+            
+        Returns:
+            Tuple: (entities_display, anonymized_text, result_object)
+        """
+        try:
+            # Перевірка чи є активні сутності
+            if not self.enabled_ukrainian and not self.enabled_presidio:
+                return (
+                    "⚠️ Жодна сутність не активована.\n"
+                    "Перейдіть на вкладку 'Налаштування' і виберіть типи даних.",
+                    text,
+                    None
+                )
+            
+            # Виконуємо аналіз
+            result: AnalysisResult = self.analyzer.analyze(
+                text=text,
+                ukrainian_entities=list(self.enabled_ukrainian),
+                presidio_entities=list(self.enabled_presidio),
+                conflict_strategy="priority"
+            )
+            
+            # Форматуємо для відображення
+            entities_display = self._format_entities_display(result)
+            
+            # КРИТИЧНО: Повертаємо також result для state
+            return entities_display, result.anonymized_text, result
+            
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}", exc_info=True)
+            error_msg = self._format_error(e)
+            return error_msg[0], error_msg[1], None
     
     def _format_entities_display(self, result: AnalysisResult) -> str:
         """
@@ -177,6 +244,219 @@ class GradioInterface:
             return self.config.PRESIDIO_PATTERN_ENTITIES[entity_type].description
         return "Невідомий тип"
     
+    # ============================================================
+    # FILE I/O METHODS (NEW)
+    # ============================================================
+    
+    def process_file_upload(
+        self, 
+        file_obj
+    ) -> Tuple[str, str]:
+        """
+        NEW: Обробляє завантажений файл та витягує текст.
+        
+        Architecture Pattern: Adapter Pattern
+        Конвертує Gradio file object → normalized text через FileHandler.
+        
+        Workflow:
+        1. Validation (file exists, supported format)
+        2. Delegation to FileHandler (format detection)
+        3. Text sanitization (encoding normalization)
+        4. UI feedback (status, extracted text)
+        
+        Args:
+            file_obj: File object від gr.File компонента
+            
+        Returns:
+            Tuple: (extracted_text, status_message)
+        """
+        if file_obj is None:
+            return "", "⚠️ Файл не вибрано"
+        
+        try:
+            # Делегуємо читання до FileHandler
+            result: FileReadResult = FileHandler.read_file(file_obj.name)
+            
+            # Санітизуємо текст (encoding, line endings, whitespace)
+            clean_text = sanitize_text(result.text)
+            
+            # Формуємо user-friendly status
+            status = (
+                f"✅ Файл завантажено успішно!\n\n"
+                f"📄 Назва: {result.filename}\n"
+                f"📊 Тип: {result.file_type.upper()}\n"
+                f"📏 Символів: {result.char_count:,}\n"
+            )
+            
+            if result.encoding:
+                status += f"🔤 Кодування: {result.encoding}\n"
+            
+            logger.info(
+                f"File processed successfully: {result.filename}, "
+                f"{result.char_count} chars, {result.file_type}"
+            )
+            
+            return clean_text, status
+            
+        except Exception as e:
+            error_msg = (
+                f"❌ Помилка завантаження файлу\n\n"
+                f"Деталі: {str(e)}\n\n"
+                f"💡 Перевірте:\n"
+                f"• Формат файлу (підтримуються: TXT, DOCX)\n"
+                f"• Розмір файлу (макс. {FileHandler.MAX_FILE_SIZE_MB} MB)\n"
+                f"• Кодування файлу (рекомендується UTF-8)"
+            )
+            
+            logger.error(f"File upload failed: {e}", exc_info=True)
+            return "", error_msg
+    
+    def export_anonymized_text(
+        self,
+        result_state: Optional[AnalysisResult],
+        export_format: str
+    ) -> Optional[str]:
+        """
+        NEW: Експортує анонімізований текст у вибраному форматі.
+        
+        Architecture Pattern: Strategy Pattern через FileExporter.
+        UI layer не знає деталей експорту - делегує до exporters.
+        
+        Args:
+            result_state: Збережений результат аналізу з gr.State
+            export_format: Формат експорту (txt/docx/md)
+            
+        Returns:
+            Шлях до згенерованого файлу для Gradio download
+        """
+        if result_state is None:
+            logger.warning("Export attempted without analysis results")
+            gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
+            return None
+        
+        try:
+            # Делегуємо експорт до FileExporter
+            file_bytes = FileExporter.export_anonymized_text(
+                result_state,
+                format=export_format,
+                include_metadata=True
+            )
+            
+            # Генеруємо filename з timestamp
+            filename = generate_filename(
+                base_name="deidentified",
+                format=export_format,
+                include_timestamp=True
+            )
+            
+            # Зберігаємо тимчасово для Gradio download
+            temp_path = f"/tmp/{filename}"
+            with open(temp_path, 'wb') as f:
+                f.write(file_bytes)
+            
+            logger.info(f"Exported anonymized text as {export_format}: {filename}")
+            
+            return temp_path
+            
+        except Exception as e:
+            logger.error(f"Export failed: {e}", exc_info=True)
+            gr.Warning(f"❌ Помилка експорту: {str(e)}")
+            return None
+    
+    def export_entities_report(
+        self,
+        result_state: Optional[AnalysisResult],
+        export_format: str
+    ) -> Optional[str]:
+        """
+        NEW: Експортує звіт про знайдені сутності.
+        
+        Args:
+            result_state: Збережений результат аналізу
+            export_format: Формат експорту (json/csv/txt)
+            
+        Returns:
+            Шлях до згенерованого файлу
+        """
+        if result_state is None:
+            logger.warning("Export attempted without analysis results")
+            gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
+            return None
+        
+        try:
+            file_bytes = FileExporter.export_entities_report(
+                result_state,
+                format=export_format
+            )
+            
+            filename = generate_filename(
+                base_name="entities_report",
+                format=export_format,
+                include_timestamp=True
+            )
+            
+            temp_path = f"/tmp/{filename}"
+            with open(temp_path, 'wb') as f:
+                f.write(file_bytes)
+            
+            logger.info(f"Exported entities report as {export_format}: {filename}")
+            
+            return temp_path
+            
+        except Exception as e:
+            logger.error(f"Export failed: {e}", exc_info=True)
+            gr.Warning(f"❌ Помилка експорту: {str(e)}")
+            return None
+    
+    def export_full_report(
+        self,
+        result_state: Optional[AnalysisResult],
+        export_format: str
+    ) -> Optional[str]:
+        """
+        NEW: Експортує повний звіт (текст + сутності + статистика).
+        
+        Args:
+            result_state: Збережений результат аналізу
+            export_format: Формат експорту (docx/md/txt)
+            
+        Returns:
+            Шлях до згенерованого файлу
+        """
+        if result_state is None:
+            logger.warning("Export attempted without analysis results")
+            gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
+            return None
+        
+        try:
+            file_bytes = FileExporter.export_full_report(
+                result_state,
+                format=export_format
+            )
+            
+            filename = generate_filename(
+                base_name="full_report",
+                format=export_format,
+                include_timestamp=True
+            )
+            
+            temp_path = f"/tmp/{filename}"
+            with open(temp_path, 'wb') as f:
+                f.write(file_bytes)
+            
+            logger.info(f"Exported full report as {export_format}: {filename}")
+            
+            return temp_path
+            
+        except Exception as e:
+            logger.error(f"Export failed: {e}", exc_info=True)
+            gr.Warning(f"❌ Помилка експорту: {str(e)}")
+            return None
+    
+    # ============================================================
+    # SETTINGS MANAGEMENT (ORIGINAL - UNCHANGED)
+    # ============================================================
+    
     def update_settings(
         self,
         ukrainian_checkboxes: List[str],
@@ -224,13 +504,22 @@ class GradioInterface:
             f"• Presidio patterns: {len(self.enabled_presidio)}"
         )
     
+    # ============================================================
+    # UI CONSTRUCTION (ENHANCED)
+    # ============================================================
+    
     def build_interface(self) -> gr.Blocks:
         """
-        Створює повний Gradio інтерфейс з вкладками.
+        ENHANCED: Створює повний Gradio інтерфейс з file I/O підтримкою.
         
-        UI Architecture:
-        - Tab 1: Аналіз тексту (основна функція)
-        - Tab 2: Налаштування (вибір типів сутностей)
+        UI Architecture Evolution:
+        - Tab 1: Аналіз тексту (ENHANCED: + file upload/export)
+        - Tab 2: Налаштування (ORIGINAL: unchanged)
+        
+        Design Strategy: Progressive Enhancement
+        - Core functionality (manual text input) залишається простою
+        - Advanced features (file I/O) доступні через додаткові UI elements
+        - Zero impact на існуючий user flow
         
         Returns:
             Gradio Blocks інтерфейс
@@ -241,6 +530,19 @@ class GradioInterface:
             css="""
                 .entity-checkbox { margin: 5px 0; }
                 .settings-column { padding: 10px; }
+                .file-upload-section { 
+                    border: 2px dashed #ccc; 
+                    padding: 20px; 
+                    border-radius: 8px;
+                    background-color: #f9f9f9;
+                    margin-bottom: 20px;
+                }
+                .export-section {
+                    background-color: #f0f7ff;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin-top: 20px;
+                }
             """
         ) as interface:
             
@@ -251,33 +553,61 @@ class GradioInterface:
                 **Гібридний підхід:** Трансформерна NER модель + Rule-based Presidio patterns
                 
                 Автоматично виявляє та анонімізує персональні дані в українському тексті.
+                **Новинка:** Підтримка завантаження файлів (TXT/DOCX) та експорту результатів!
                 """
             )
             
-            # ============ ВКЛАДКА 1: АНАЛІЗ ============
+            # ============ STATE для збереження результатів ============
+            # Critical: Зберігає AnalysisResult між викликами для export
+            analysis_result_state = gr.State(value=None)
+            
+            # ============ ВКЛАДКА 1: АНАЛІЗ (ENHANCED) ============
             with gr.Tab("🔍 Аналіз тексту"):
                 gr.Markdown(
                     """
                     ### Як використовувати:
-                    1. Вставте текст у поле нижче
+                    1. **Завантажте файл** (TXT/DOCX) або **введіть текст** вручну
                     2. Натисніть "Деідентифікувати"
-                    3. Перегляньте знайдені сутності та анонімізований текст
+                    3. Перегляньте результати та **завантажте** у потрібному форматі
                     
-                    💡 Налаштуйте типи даних для пошуку на вкладці "Налаштування"
+                    💡 Налаштуйте типи даних на вкладці "Налаштування"
                     """
                 )
                 
+                # ===== СЕКЦІЯ ЗАВАНТАЖЕННЯ ФАЙЛУ (NEW) =====
+                with gr.Group(elem_classes="file-upload-section"):
+                    gr.Markdown("### 📁 Завантаження файлу (опціонально)")
+                    
+                    with gr.Row():
+                        file_upload = gr.File(
+                            label="Виберіть файл",
+                            file_types=[".txt", ".docx"],
+                            type="filepath"
+                        )
+                        
+                        file_status = gr.Textbox(
+                            label="Статус завантаження",
+                            interactive=False,
+                            lines=5,
+                            placeholder="Виберіть TXT або DOCX файл для автоматичного витягування тексту..."
+                        )
+                
+                gr.Markdown("---")
+                
+                # ===== КНОПКА АНАЛІЗУ =====
                 analyze_btn = gr.Button(
                     "🚀 Деідентифікувати",
                     variant="primary",
                     size="lg"
                 )
-
+                
+                # ===== ПАНЕЛІ РЕЗУЛЬТАТІВ =====
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1):
                         input_text = gr.Textbox(
                             label="Вхідний текст",
                             placeholder=(
+                                "Вставте текст або завантажте файл вище...\n\n"
                                 "Приклад:\n"
                                 "Іван Петренко працює в ТОВ 'Приватбанк'.\n"
                                 "Email: ivan.petrenko@example.com\n"
@@ -287,7 +617,7 @@ class GradioInterface:
                             lines=12,
                             max_lines=20
                         )
-
+                    
                     with gr.Column(scale=1):
                         anonymized_output = gr.Textbox(
                             label="🔒 Анонімізований текст",
@@ -295,7 +625,7 @@ class GradioInterface:
                             show_copy_button=True,
                             interactive=False
                         )
-
+                        
                         entities_output = gr.Textbox(
                             label="📋 Знайдені сутності",
                             lines=12,
@@ -303,7 +633,61 @@ class GradioInterface:
                             interactive=False
                         )
                 
-                # Приклади
+                # ===== СЕКЦІЯ ЕКСПОРТУ (NEW) =====
+                with gr.Group(elem_classes="export-section"):
+                    gr.Markdown("### 💾 Завантаження результатів")
+                    gr.Markdown(
+                        "*Після аналізу тексту ви можете завантажити результати "
+                        "у різних форматах. Виберіть тип звіту та формат.*"
+                    )
+                    
+                    with gr.Row():
+                        # Експорт анонімізованого тексту
+                        with gr.Column():
+                            gr.Markdown("**📄 Анонімізований текст**")
+                            text_format = gr.Radio(
+                                choices=["txt", "docx", "md"],
+                                value="txt",
+                                label="Формат",
+                                info="Тільки анонімізований текст"
+                            )
+                            download_text_btn = gr.DownloadButton(
+                                "⬇️ Завантажити текст",
+                                variant="secondary",
+                                size="sm"
+                            )
+                        
+                        # Експорт звіту про сутності
+                        with gr.Column():
+                            gr.Markdown("**📊 Звіт про сутності**")
+                            entities_format = gr.Radio(
+                                choices=["json", "csv", "txt"],
+                                value="json",
+                                label="Формат",
+                                info="Список знайдених PII даних"
+                            )
+                            download_entities_btn = gr.DownloadButton(
+                                "⬇️ Завантажити звіт",
+                                variant="secondary",
+                                size="sm"
+                            )
+                        
+                        # Експорт повного звіту
+                        with gr.Column():
+                            gr.Markdown("**📑 Повний звіт**")
+                            report_format = gr.Radio(
+                                choices=["docx", "md", "txt"],
+                                value="docx",
+                                label="Формат",
+                                info="Текст + сутності + статистика"
+                            )
+                            download_report_btn = gr.DownloadButton(
+                                "⬇️ Завантажити звіт",
+                                variant="primary",
+                                size="sm"
+                            )
+                
+                # ===== ПРИКЛАДИ =====
                 gr.Examples(
                     examples=[
                         [
@@ -326,14 +710,42 @@ class GradioInterface:
                     cache_examples=False,
                 )
                 
-                # Обробка події
+                # ============ EVENT HANDLERS ============
+                
+                # File upload → text extraction
+                file_upload.change(
+                    fn=self.process_file_upload,
+                    inputs=[file_upload],
+                    outputs=[input_text, file_status]
+                )
+                
+                # Text analysis (ENHANCED: зберігає результат в state)
                 analyze_btn.click(
-                    fn=self.analyze_text,
+                    fn=self.analyze_text_with_export,
                     inputs=[input_text],
-                    outputs=[entities_output, anonymized_output]
+                    outputs=[entities_output, anonymized_output, analysis_result_state]
+                )
+                
+                # Export handlers
+                download_text_btn.click(
+                    fn=self.export_anonymized_text,
+                    inputs=[analysis_result_state, text_format],
+                    outputs=[download_text_btn]
+                )
+                
+                download_entities_btn.click(
+                    fn=self.export_entities_report,
+                    inputs=[analysis_result_state, entities_format],
+                    outputs=[download_entities_btn]
+                )
+                
+                download_report_btn.click(
+                    fn=self.export_full_report,
+                    inputs=[analysis_result_state, report_format],
+                    outputs=[download_report_btn]
                 )
             
-            # ============ ВКЛАДКА 2: НАЛАШТУВАННЯ ============
+            # ============ ВКЛАДКА 2: НАЛАШТУВАННЯ (ORIGINAL - UNCHANGED) ============
             with gr.Tab("⚙️ Налаштування"):
                 gr.Markdown(
                     """
@@ -418,7 +830,11 @@ class GradioInterface:
                 )
         
         return interface
-
+    
+    # ============================================================
+    # LAUNCH INFRASTRUCTURE (ORIGINAL - UNCHANGED)
+    # ============================================================
+    
     def launch(self, **kwargs) -> None:
         """
         Запускає Gradio інтерфейс.
@@ -521,6 +937,6 @@ def create_interface() -> GradioInterface:
     Design Pattern: Factory для спрощення створення в app.py
     
     Returns:
-        Налаштований GradioInterface
+        Налаштований GradioInterface з повною підтримкою file I/O
     """
     return GradioInterface()

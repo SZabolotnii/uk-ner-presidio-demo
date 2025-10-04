@@ -10,6 +10,10 @@ spacy==3.7.4
 spacy-transformers>=1.3
 
 
+# ============ НОВІ ЗАЛЕЖНОСТІ ДЛЯ FILE I/O ============
+python-docx>=0.8.11       # DOCX read/write
+chardet>=5.1.0            # Encoding detection для TXT
+
 # ============ TESTING ============
 pytest>=7.4.0              # Фреймворк для тестування
 pytest-cov>=4.1.0          # Code coverage
