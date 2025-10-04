@@ -60,10 +60,37 @@ def warmup_models():
     except Exception as e:
         logger.error(f"✗ Model warmup failed: {e}", exc_info=True)
         # Продовжуємо, але логуємо
+
+def validate_environment():
+    """
+    CRITICAL: Pre-flight environment validation.
+    
+    Catches dependency issues before user interaction.
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        import gradio as gr
+        import spacy
+        import presidio_analyzer
         
+        # Version reporting
+        logger.info(f"Gradio: {gr.__version__}")
+        logger.info(f"spaCy: {spacy.__version__}")
+        
+        # Compatibility checks
+        from core.dependencies import GradioCompatibility
+        GradioCompatibility.validate_compatibility()
+        
+        logger.info("✓ Environment validation passed")
+        
+    except Exception as e:
+        logger.error(f"✗ Environment validation failed: {e}")
+        # Continue anyway - fail gracefully at runtime        
 
 def main():
     setup_logging()
+    validate_environment() 
     logger = logging.getLogger(__name__)
     
     logger.info("=" * 60)
