@@ -894,35 +894,22 @@ class GradioInterface:
     # ============================================================
     
     def launch(self, **kwargs) -> None:
-        """
-        Запускає Gradio інтерфейс.
-        
-        Args:
-            **kwargs: Параметри для demo.launch()
-        """
         interface = self.build_interface()
         
-        # Налаштування за замовчуванням
+        # HF Spaces ЗАВЖДИ використовує 7860
         launch_config = {
             "share": False,
-            "server_name": "127.0.0.1",
-            "server_port": 7860,
+            "server_name": "0.0.0.0",  # CRITICAL для Docker
+            "server_port": 7860,       # HARDCODED для HF Spaces
             "show_error": True
         }
-        launch_config.update(kwargs)
-
-        resolved_port = self._resolve_server_port(
-            host=launch_config.get("server_name", "127.0.0.1"),
-            requested_port=launch_config.get("server_port")
-        )
-
-        launch_config["server_port"] = resolved_port
-
-        logger.info(
-            "Launching Gradio interface on %s:%s",
-            launch_config.get("server_name", "127.0.0.1"),
-            launch_config.get("server_port") or "auto"
-        )
+        
+        # Override тільки якщо локально
+        if not os.getenv("SPACE_ID"):  # HF Spaces env var
+            resolved_port = self._resolve_server_port(...)
+            launch_config["server_port"] = resolved_port
+        
+        logger.info(f"Launching on {launch_config['server_name']}:{launch_config['server_port']}")
         interface.launch(**launch_config)
 
     def _resolve_server_port(self, host: str, requested_port: int | None) -> int | None:
