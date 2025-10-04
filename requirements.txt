@@ -6,8 +6,8 @@ torch
 huggingface-hub
 
 # ============ GRADIO UI (PINNED) ============
-# NOTE: 4.14.0 keeps typer at 0.9.x which is compatible with spaCy 3.7
-gradio==4.14.0
+# NOTE: 4.26.0 keeps typer at 0.9.x which is compatible with spaCy 3.7
+gradio==4.26.0
 gradio-client==0.8.0
 MarkupSafe>=2.1.5,<2.2
 typer[all]>=0.9,<0.10

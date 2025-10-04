@@ -607,7 +607,7 @@ class GradioInterface:
                         file_status = gr.Textbox(
                             label="Статус завантаження",
                             interactive=False,
-                            lines=5,
+                            lines=3,
                             placeholder="Виберіть TXT або DOCX файл для автоматичного витягування тексту..."
                         )
                 
