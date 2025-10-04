@@ -12,6 +12,8 @@ import logging
 import sys
 
 from ui.gradio_interface import create_interface
+from recognizers.ukrainian_ner import UkrainianNERRecognizer  # NEW
+
 
 
 def setup_logging():
@@ -37,16 +39,30 @@ def setup_logging():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-def main():
+def warmup_models():
     """
-    Головна функція запуску.
+    CRITICAL: Завантажуємо модель ДО запуску Gradio server.
     
-    Workflow:
-    1. Налаштування logging
-    2. Створення UI через factory
-    3. Запуск Gradio сервера
+    Strategy: Eager initialization для синхронізації з HF Spaces health check.
     """
-    # Налаштовуємо логування
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("WARMUP: Pre-loading Ukrainian NER model...")
+    logger.info("=" * 60)
+    
+    try:
+        # Примусово викликаємо завантаження
+        recognizer = UkrainianNERRecognizer()
+        recognizer._load_model()  # Explicit load
+        
+        logger.info("✓ Model loaded successfully and cached in memory")
+        logger.info("=" * 60)
+    except Exception as e:
+        logger.error(f"✗ Model warmup failed: {e}", exc_info=True)
+        # Продовжуємо, але логуємо
+        
+
+def main():
     setup_logging()
     logger = logging.getLogger(__name__)
     
@@ -55,14 +71,13 @@ def main():
     logger.info("=" * 60)
     
     try:
-        # Створюємо інтерфейс через factory function
+        # PHASE 1: Warmup (CRITICAL for HF Spaces)
+        warmup_models()
+        
+        # PHASE 2: Create UI
         interface = create_interface()
         
-        # Запускаємо Gradio
-        # Для production можна додати параметри:
-        # - auth=("username", "password") для аутентифікації
-        # - share=True для публічного доступу
-        # - server_name="0.0.0.0" для зовнішнього доступу
+        # PHASE 3: Launch
         interface.launch()
         
     except KeyboardInterrupt:
