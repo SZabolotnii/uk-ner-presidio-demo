@@ -273,6 +273,8 @@ class PDFHandler:
 
 # ============ HELPER FUNCTIONS ============
 
+# utils/file_handlers.py - функція sanitize_text
+
 def sanitize_text(text: str) -> str:
     """
     Нормалізує текст після читання з файлу.
@@ -281,7 +283,7 @@ def sanitize_text(text: str) -> str:
     - Видалення зайвих пробілів
     - Нормалізація line endings
     - Видалення control characters
-    - Обмеження послідовних порожніх рядків до 2
+    - Обмеження послідовних порожніх рядків до 1 (max 2 newlines підряд)
     
     Args:
         text: Сирий текст з файлу
@@ -289,7 +291,7 @@ def sanitize_text(text: str) -> str:
     Returns:
         Очищений текст
         
-    Design Decision: Дозволяємо максимум 2 послідовних newlines (1 порожній рядок)
+    Design Decision: Дозволяємо максимум 1 порожній рядок (2 newlines підряд)
     для збереження структури документу, але запобігаємо надмірним пробілам.
     """
     # Нормалізуємо line endings (Windows/Mac → Unix)
@@ -298,18 +300,19 @@ def sanitize_text(text: str) -> str:
     # Видаляємо trailing whitespace з кожного рядка
     lines = [line.rstrip() for line in text.split('\n')]
     
-    # Обмежуємо послідовні порожні рядки до 1 (тобто max 2 newlines підряд)
+    # ✅ FIXED: Обмежуємо послідовні порожні рядки
     cleaned_lines = []
-    empty_count = 0
+    consecutive_empty = 0
     
     for line in lines:
         if not line:  # Порожній рядок
-            empty_count += 1
-            # Дозволяємо максимум 1 порожній рядок (2 newlines)
-            if empty_count <= 1:
+            consecutive_empty += 1
+            # Дозволяємо максимум 1 порожній рядок (тобто 2 newlines підряд)
+            if consecutive_empty <= 1:
                 cleaned_lines.append(line)
+            # Якщо більше - пропускаємо
         else:  # Непорожній рядок
-            empty_count = 0
+            consecutive_empty = 0  # Скидаємо лічильник
             cleaned_lines.append(line)
     
     # Об'єднуємо та видаляємо whitespace на початку/кінці

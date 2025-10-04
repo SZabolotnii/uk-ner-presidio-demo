@@ -13,9 +13,13 @@ Test Strategy:
 import pytest
 import time
 import tempfile
-import os
+import os  # ✅ ADD THIS
 from pathlib import Path
 from io import BytesIO
+import logging  # ✅ ADD THIS для logger в performance tests
+
+# Initialize logger для performance tests
+logger = logging.getLogger(__name__)
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -343,6 +347,9 @@ class TestFileIOIntegration:
 # ============ PERFORMANCE TESTS ============
 
 
+# test/test_file_io.py
+# ВИДАЛІТИ benchmark параметри з performance tests
+
 @pytest.mark.slow
 class TestPerformance:
     """
@@ -421,7 +428,7 @@ class TestPerformance:
         Run explicitly: pytest -v -k memory
         """
         import psutil
-        import os as os_module
+        import os as os_module  # ✅ Renamed to avoid conflict
         
         # Arrange: 50MB файл
         huge_file = tmp_path / "huge.txt"

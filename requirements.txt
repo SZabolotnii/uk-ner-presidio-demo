@@ -1,22 +1,37 @@
-# Dependencies currently require Python <3.13 because spaCy's blis wheel is missing for 3.13.
+# requirements.txt - UPDATED VERSION
+
+# ============ CORE DEPENDENCIES ============
 transformers
 torch
 huggingface-hub
-gradio==4.26.0
+
+# ============ GRADIO UI (PINNED) ============
+# NOTE: 4.14.0 keeps typer at 0.9.x which is compatible with spaCy 3.7
+gradio==4.14.0
+gradio-client==0.8.0
 MarkupSafe>=2.1.5,<2.2
-presidio-analyzer
-presidio-anonymizer
+typer[all]>=0.9,<0.10
+
+# ============ SPACY & NER ============
 spacy==3.7.4
 spacy-transformers>=1.3
 
+# ============ PRESIDIO ============
+presidio-analyzer
+presidio-anonymizer
 
-# ============ НОВІ ЗАЛЕЖНОСТІ ДЛЯ FILE I/O ============
-python-docx>=0.8.11       # DOCX read/write
-chardet>=5.1.0            # Encoding detection для TXT
+# ============ FILE I/O ============
+python-docx>=0.8.11
+chardet>=5.1.0
 
 # ============ TESTING ============
-pytest>=7.4.0              # Фреймворк для тестування
-pytest-cov>=4.1.0          # Code coverage
-pytest-mock>=3.11.1        # Mocking utilities
-pytest-asyncio>=0.21.0     # Async тести
-pytest-xdist>=3.3.1        # Parallel test execution
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+pytest-asyncio>=0.21.0
+pytest-xdist>=3.3.1
+
+# ============ CONSTRAINT NOTES ============
+# typer<0.10.0 required by spaCy/weasel
+# Gradio 4.15+ pulls typer>=0.12 (incompatible)
+# Therefore: lock Gradio at 4.14.0 and typer to 0.9.x

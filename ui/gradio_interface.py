@@ -47,11 +47,18 @@ class GradioInterface:
         """Ініціалізація з глобальною конфігурацією."""
         self.analyzer = HybridAnalyzer()
         self.config = config
-        
+
         # Початковий стан: всі сутності активовані
         self.enabled_ukrainian = set(self.config.UKRAINIAN_ENTITIES.keys())
         self.enabled_presidio = set(self.config.PRESIDIO_PATTERN_ENTITIES.keys())
-        
+
+        # Gradio 4.14.0 не має DownloadButton, тому використовуємо fallback
+        self._has_download_button = hasattr(gr, "DownloadButton")
+        if not self._has_download_button:
+            logger.warning(
+                "Gradio DownloadButton unavailable; falling back to File components for downloads"
+            )
+
         logger.info("GradioInterface initialized with file I/O support")
     
     def _format_error(self, error: Exception) -> Tuple[str, str]:
@@ -231,10 +238,10 @@ class GradioInterface:
     def _get_entity_description(self, entity_type: str) -> str:
         """
         Отримує опис сутності з конфігурації.
-        
+
         Args:
             entity_type: Тип сутності
-            
+
         Returns:
             Опис сутності
         """
@@ -243,6 +250,18 @@ class GradioInterface:
         elif entity_type in self.config.PRESIDIO_PATTERN_ENTITIES:
             return self.config.PRESIDIO_PATTERN_ENTITIES[entity_type].description
         return "Невідомий тип"
+
+    def _download_response(self, file_path: Optional[str]):
+        """
+        Формує відповідь для компонентів завантаження з урахуванням версії Gradio.
+        """
+        if self._has_download_button:
+            return file_path
+
+        if file_path:
+            return gr.File.update(value=file_path, visible=True)
+
+        return gr.File.update(value=None, visible=False)
     
     # ============================================================
     # FILE I/O METHODS (NEW)
@@ -332,8 +351,8 @@ class GradioInterface:
         if result_state is None:
             logger.warning("Export attempted without analysis results")
             gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
-            return None
-        
+            return self._download_response(None)
+
         try:
             # Делегуємо експорт до FileExporter
             file_bytes = FileExporter.export_anonymized_text(
@@ -353,15 +372,15 @@ class GradioInterface:
             temp_path = f"/tmp/{filename}"
             with open(temp_path, 'wb') as f:
                 f.write(file_bytes)
-            
+
             logger.info(f"Exported anonymized text as {export_format}: {filename}")
-            
-            return temp_path
-            
+
+            return self._download_response(temp_path)
+
         except Exception as e:
             logger.error(f"Export failed: {e}", exc_info=True)
             gr.Warning(f"❌ Помилка експорту: {str(e)}")
-            return None
+            return self._download_response(None)
     
     def export_entities_report(
         self,
@@ -381,7 +400,7 @@ class GradioInterface:
         if result_state is None:
             logger.warning("Export attempted without analysis results")
             gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
-            return None
+            return self._download_response(None)
         
         try:
             file_bytes = FileExporter.export_entities_report(
@@ -398,15 +417,15 @@ class GradioInterface:
             temp_path = f"/tmp/{filename}"
             with open(temp_path, 'wb') as f:
                 f.write(file_bytes)
-            
+
             logger.info(f"Exported entities report as {export_format}: {filename}")
-            
-            return temp_path
-            
+
+            return self._download_response(temp_path)
+
         except Exception as e:
             logger.error(f"Export failed: {e}", exc_info=True)
             gr.Warning(f"❌ Помилка експорту: {str(e)}")
-            return None
+            return self._download_response(None)
     
     def export_full_report(
         self,
@@ -426,7 +445,7 @@ class GradioInterface:
         if result_state is None:
             logger.warning("Export attempted without analysis results")
             gr.Warning("⚠️ Спочатку виконайте аналіз тексту")
-            return None
+            return self._download_response(None)
         
         try:
             file_bytes = FileExporter.export_full_report(
@@ -443,15 +462,15 @@ class GradioInterface:
             temp_path = f"/tmp/{filename}"
             with open(temp_path, 'wb') as f:
                 f.write(file_bytes)
-            
+
             logger.info(f"Exported full report as {export_format}: {filename}")
-            
-            return temp_path
-            
+
+            return self._download_response(temp_path)
+
         except Exception as e:
             logger.error(f"Export failed: {e}", exc_info=True)
             gr.Warning(f"❌ Помилка експорту: {str(e)}")
-            return None
+            return self._download_response(None)
     
     # ============================================================
     # SETTINGS MANAGEMENT (ORIGINAL - UNCHANGED)
@@ -640,7 +659,7 @@ class GradioInterface:
                         "*Після аналізу тексту ви можете завантажити результати "
                         "у різних форматах. Виберіть тип звіту та формат.*"
                     )
-                    
+
                     with gr.Row():
                         # Експорт анонімізованого тексту
                         with gr.Column():
@@ -651,12 +670,25 @@ class GradioInterface:
                                 label="Формат",
                                 info="Тільки анонімізований текст"
                             )
-                            download_text_btn = gr.DownloadButton(
-                                "⬇️ Завантажити текст",
-                                variant="secondary",
-                                size="sm"
-                            )
-                        
+                            if self._has_download_button:
+                                download_text_btn = gr.DownloadButton(
+                                    "⬇️ Завантажити текст",
+                                    variant="secondary",
+                                    size="sm"
+                                )
+                                download_text_output = download_text_btn
+                            else:
+                                download_text_btn = gr.Button(
+                                    "⬇️ Згенерувати файл",
+                                    variant="secondary",
+                                    size="sm"
+                                )
+                                download_text_output = gr.File(
+                                    label="⬇️ Завантажити текст",
+                                    interactive=False,
+                                    visible=False
+                                )
+
                         # Експорт звіту про сутності
                         with gr.Column():
                             gr.Markdown("**📊 Звіт про сутності**")
@@ -666,12 +698,25 @@ class GradioInterface:
                                 label="Формат",
                                 info="Список знайдених PII даних"
                             )
-                            download_entities_btn = gr.DownloadButton(
-                                "⬇️ Завантажити звіт",
-                                variant="secondary",
-                                size="sm"
-                            )
-                        
+                            if self._has_download_button:
+                                download_entities_btn = gr.DownloadButton(
+                                    "⬇️ Завантажити звіт",
+                                    variant="secondary",
+                                    size="sm"
+                                )
+                                download_entities_output = download_entities_btn
+                            else:
+                                download_entities_btn = gr.Button(
+                                    "⬇️ Згенерувати звіт",
+                                    variant="secondary",
+                                    size="sm"
+                                )
+                                download_entities_output = gr.File(
+                                    label="⬇️ Завантажити звіт",
+                                    interactive=False,
+                                    visible=False
+                                )
+
                         # Експорт повного звіту
                         with gr.Column():
                             gr.Markdown("**📑 Повний звіт**")
@@ -681,11 +726,24 @@ class GradioInterface:
                                 label="Формат",
                                 info="Текст + сутності + статистика"
                             )
-                            download_report_btn = gr.DownloadButton(
-                                "⬇️ Завантажити звіт",
-                                variant="primary",
-                                size="sm"
-                            )
+                            if self._has_download_button:
+                                download_report_btn = gr.DownloadButton(
+                                    "⬇️ Завантажити звіт",
+                                    variant="primary",
+                                    size="sm"
+                                )
+                                download_report_output = download_report_btn
+                            else:
+                                download_report_btn = gr.Button(
+                                    "⬇️ Згенерувати повний звіт",
+                                    variant="primary",
+                                    size="sm"
+                                )
+                                download_report_output = gr.File(
+                                    label="⬇️ Завантажити повний звіт",
+                                    interactive=False,
+                                    visible=False
+                                )
                 
                 # ===== ПРИКЛАДИ =====
                 gr.Examples(
@@ -730,19 +788,19 @@ class GradioInterface:
                 download_text_btn.click(
                     fn=self.export_anonymized_text,
                     inputs=[analysis_result_state, text_format],
-                    outputs=[download_text_btn]
+                    outputs=[download_text_output]
                 )
-                
+
                 download_entities_btn.click(
                     fn=self.export_entities_report,
                     inputs=[analysis_result_state, entities_format],
-                    outputs=[download_entities_btn]
+                    outputs=[download_entities_output]
                 )
-                
+
                 download_report_btn.click(
                     fn=self.export_full_report,
                     inputs=[analysis_result_state, report_format],
-                    outputs=[download_report_btn]
+                    outputs=[download_report_output]
                 )
             
             # ============ ВКЛАДКА 2: НАЛАШТУВАННЯ (ORIGINAL - UNCHANGED) ============
