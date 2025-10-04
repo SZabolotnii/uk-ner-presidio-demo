@@ -259,9 +259,9 @@ class GradioInterface:
             return file_path
 
         if file_path:
-            return gr.File.update(value=file_path, visible=True)
+            return gr.update(value=file_path, visible=True)
 
-        return gr.File.update(value=None, visible=False)
+        return gr.update(value=None, visible=False)
     
     # ============================================================
     # FILE I/O METHODS (NEW)
