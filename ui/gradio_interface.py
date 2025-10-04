@@ -895,22 +895,54 @@ class GradioInterface:
     
     def launch(self, **kwargs) -> None:
         interface = self.build_interface()
-        
-        # HF Spaces ЗАВЖДИ використовує 7860
-        launch_config = {
+
+        defaults = {
             "share": False,
-            "server_name": "0.0.0.0",  # CRITICAL для Docker
-            "server_port": 7860,       # HARDCODED для HF Spaces
-            "show_error": True
+            "server_name": "0.0.0.0",  # Необхідно для Docker/HF Spaces
+            "server_port": 7860,        # Стандартний порт для HF Spaces
+            "show_error": True,
         }
-        
-        # Override тільки якщо локально
-        if not os.getenv("SPACE_ID"):  # HF Spaces env var
-            resolved_port = self._resolve_server_port(...)
-            launch_config["server_port"] = resolved_port
-        
-        logger.info(f"Launching on {launch_config['server_name']}:{launch_config['server_port']}")
-        interface.launch(**launch_config)
+
+        launch_config = {**defaults, **kwargs}
+
+        if os.getenv("SPACE_ID"):
+            # На HF Spaces примусово використовуємо стандартні налаштування
+            launch_config["server_name"] = defaults["server_name"]
+            launch_config["server_port"] = defaults["server_port"]
+        else:
+            host = launch_config.get("server_name") or "127.0.0.1"
+            requested_port = launch_config.get("server_port")
+            resolved_port = self._resolve_server_port(host, requested_port)
+
+            if resolved_port is None:
+                launch_config.pop("server_port", None)
+            else:
+                launch_config["server_port"] = resolved_port
+
+        port_display = launch_config.get("server_port", "auto")
+        logger.info(
+            "Launching on %s:%s",
+            launch_config.get("server_name"),
+            port_display,
+        )
+
+        try:
+            interface.launch(**launch_config)
+        except OSError as exc:
+            if (
+                not os.getenv("SPACE_ID")
+                and "Cannot find empty port" in str(exc)
+                and "server_port" in launch_config
+            ):
+                busy_port = launch_config.get("server_port")
+                logger.warning(
+                    "Requested port %s unavailable. Retrying with automatic port selection.",
+                    busy_port,
+                )
+                launch_config.pop("server_port", None)
+                interface.launch(**launch_config)
+            else:
+                raise
 
     def _resolve_server_port(self, host: str, requested_port: int | None) -> int | None:
         """Підбирає доступний порт для запуску Gradio."""
