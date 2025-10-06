@@ -1,39 +1,29 @@
 """
-Точка входу для Ukrainian NER + Presidio Demo.
+Hugging Face Spaces Entry Point: Interactive Review Mode
 
-Архітектурна стратегія: Мінімальна точка входу.
-Вся бізнес-логіка винесена в окремі модулі.
-
-Design Principle: "app.py повинен бути настільки простим,
-щоб його можна було прочитати за 30 секунд"
+Architecture Strategy: HF Spaces-optimized deployment
+- Port management: Delegated to platform
+- Resource constraints: Optimized model loading
+- User experience: Clear value proposition
 """
 
 import logging
 import sys
+import os
 
-from ui.gradio_interface import create_interface
-from recognizers.ukrainian_ner import UkrainianNERRecognizer  # NEW
-
+from core.analyzer import HybridAnalyzer
+from ui.interactive_review import create_interactive_review_interface
 
 
 def setup_logging():
-    """
-    Конфігурація логування для всієї системи.
-    
-    Strategy: Централізоване логування для спрощення debugging
-    та моніторингу в production.
-    """
+    """HF Spaces logging configuration"""
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            # У production додати FileHandler:
-            # logging.FileHandler('app.log')
-        ]
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
     
-    # Знижуємо verbosity сторонніх бібліотек
+    # Suppress noisy libraries
     logging.getLogger("transformers").setLevel(logging.WARNING)
     logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -41,9 +31,9 @@ def setup_logging():
 
 def warmup_models():
     """
-    CRITICAL: Завантажуємо модель ДО запуску Gradio server.
+    CRITICAL for HF Spaces: Pre-load before health check
     
-    Strategy: Eager initialization для синхронізації з HF Spaces health check.
+    HF Spaces expects fast startup (<60s for health check)
     """
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -51,61 +41,52 @@ def warmup_models():
     logger.info("=" * 60)
     
     try:
-        # Примусово викликаємо завантаження
+        from recognizers.ukrainian_ner import UkrainianNERRecognizer
         recognizer = UkrainianNERRecognizer()
-        recognizer._load_model()  # Explicit load
-        
-        logger.info("✓ Model loaded successfully and cached in memory")
+        recognizer._load_model()
+        logger.info("✓ Model loaded successfully")
         logger.info("=" * 60)
     except Exception as e:
         logger.error(f"✗ Model warmup failed: {e}", exc_info=True)
-        # Продовжуємо, але логуємо
 
-def validate_environment():
-    """
-    CRITICAL: Pre-flight environment validation.
-    
-    Catches dependency issues before user interaction.
-    """
-    logger = logging.getLogger(__name__)
-    
-    try:
-        import gradio as gr
-        import spacy
-        import presidio_analyzer
-        
-        # Version reporting
-        logger.info(f"Gradio: {gr.__version__}")
-        logger.info(f"spaCy: {spacy.__version__}")
-        
-        # Compatibility checks
-        from core.dependencies import GradioCompatibility
-        GradioCompatibility.validate_compatibility()
-        
-        logger.info("✓ Environment validation passed")
-        
-    except Exception as e:
-        logger.error(f"✗ Environment validation failed: {e}")
-        # Continue anyway - fail gracefully at runtime        
 
 def main():
+    """
+    Main entry point optimized for HF Spaces
+    
+    Strategic Decisions:
+    - No explicit port configuration (HF manages this)
+    - Graceful error handling for platform constraints
+    - Clear user-facing messaging
+    """
     setup_logging()
-    validate_environment() 
     logger = logging.getLogger(__name__)
     
     logger.info("=" * 60)
-    logger.info("Ukrainian NER + Presidio Demo - Starting")
+    logger.info("Interactive Review UI - Starting on Hugging Face Spaces")
     logger.info("=" * 60)
     
     try:
-        # PHASE 1: Warmup (CRITICAL for HF Spaces)
+        # Phase 1: Model warmup
         warmup_models()
         
-        # PHASE 2: Create UI
-        interface = create_interface()
+        # Phase 2: Initialize analyzer
+        analyzer = HybridAnalyzer()
         
-        # PHASE 3: Launch
-        interface.launch()
+        # Phase 3: Create UI
+        interface = create_interactive_review_interface(analyzer)
+        
+        # Phase 4: Launch
+        # HF Spaces Configuration:
+        # - server_name="0.0.0.0" (required for external access)
+        # - No server_port (platform manages this)
+        # - show_error=True (helpful for debugging)
+        
+        interface.launch(
+            server_name="0.0.0.0",  # Required for HF Spaces
+            show_error=True,
+            # share=False is default, HF provides public URL automatically
+        )
         
     except KeyboardInterrupt:
         logger.info("Shutting down gracefully...")
