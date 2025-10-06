@@ -208,7 +208,8 @@ class InteractiveReviewUI:
                     "Платіжний рахунок: UA213223130000026007233566001. Картка: 4111111111111111",
                     "Зустріч відбудеться 15 березня 2024 о 14:30 в Києві на вул. Хрещатик, 22"
                 ],
-                inputs=input_text
+                inputs=input_text,
+                cache_examples=False
             )
         
         return interface
